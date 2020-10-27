@@ -10,22 +10,35 @@ namespace FSKontrol.WPF
 {
     class FsConnection
     {
-        const int WM_USER_SIMCONNECT = 0x0402;
+        public const int WM_USER_SIMCONNECT = 0x0402;
         SimConnect simconnect = null;
-        List<SimControlAdaptor> controlAdaptors = new List<SimControlAdaptor>();
+        Dictionary<Field, SimControlAdaptor> controlAdaptors = new Dictionary<Field, SimControlAdaptor>();
+        List<Field> enabledFields = new List<Field>();
+        bool isConnected = false;
+
 
         public double GetValue(Field field)
         {
-            return 0.0;
+            EnsureFieldIsEnabled(field);
+            return controlAdaptors[field].Value;
         }
 
         public void SetValue(Field field, double val)
         {
+            EnsureFieldIsEnabled(field);
+            var controlAdaptor = controlAdaptors[field];
+            var transmitVal = controlAdaptor.PrepareTransmitValue(val);
+            simconnect.TransmitClientEvent(SimConnect.SIMCONNECT_OBJECT_ID_USER, 
+                controlAdaptor.Definition,
+                transmitVal,
+                GROUPS.GroupA,
+                SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
         }
 
         public IObservable<double> Subscribe(Field field)
         {
-            return null;
+            EnsureFieldIsEnabled(field);
+            return controlAdaptors[field].ValueChanges;
         }
         
         public FsConnection(IntPtr windowHandle)
@@ -36,6 +49,8 @@ namespace FSKontrol.WPF
                 simconnect.OnRecvOpen += new SimConnect.RecvOpenEventHandler(simconnect_OnRecvOpen);
                 simconnect.OnRecvQuit += new SimConnect.RecvQuitEventHandler(simconnect_OnRecvQuit);
                 simconnect.OnRecvException += new SimConnect.RecvExceptionEventHandler(simconnect_OnRecvException);
+                simconnect.OnRecvSimobjectDataBytype += new SimConnect.RecvSimobjectDataBytypeEventHandler(simconnect_OnRecvSimobjectDataBytype);
+                simconnect.OnRecvEvent += new SimConnect.RecvEventEventHandler(simconnect_OnRecvEvent);
             }
             catch (COMException ex)
             {
@@ -51,11 +66,13 @@ namespace FSKontrol.WPF
         void simconnect_OnRecvOpen(SimConnect sender, SIMCONNECT_RECV_OPEN data)
         {
             Console.WriteLine("Connected to sim");
+            isConnected = true;
             this.InitDataRequest();
         }
 
         void simconnect_OnRecvQuit(SimConnect sender, SIMCONNECT_RECV data)
         {
+            isConnected = false;
             Console.WriteLine("Sim has exited");
         }
 
@@ -68,16 +85,11 @@ namespace FSKontrol.WPF
         {
             try
             {
-                //RegisterDefinitions();
-                simconnect.OnRecvSimobjectDataBytype += new SimConnect.RecvSimobjectDataBytypeEventHandler(simconnect_OnRecvSimobjectDataBytype);
-                simconnect.OnRecvEvent += new SimConnect.RecvEventEventHandler(simconnect_OnRecvEvent);
-                //simconnect.RequestDataOnSimObjectType(Field.Throttle, Field.Throttle, 0, SIMCONNECT_SIMOBJECT_TYPE.USER);
-                //simconnect.MapClientEventToSimEvent(EVENTS.SetHeadingBug, "HEADING_BUG_SET");
-                //simconnect.MapClientEventToSimEvent(EVENTS.SetAPPanelAltitude, "AP_ALT_VAR_SET_ENGLISH");
-                //simconnect.MapClientEventToSimEvent(EVENTS.G1000MFDZoomIn, "G1000_MFD_ZOOMIN_BUTTON");
-                //simconnect.MapClientEventToSimEvent(EVENTS.SetElevatorTrim, "ELEVATOR_TRIM_SET");
-                //simconnect.AddClientEventToNotificationGroup(GROUPS.GroupA, EVENTS.SetElevatorTrim, false);
                 simconnect.SetNotificationGroupPriority(GROUPS.GroupA, SimConnect.SIMCONNECT_GROUP_PRIORITY_HIGHEST);
+                foreach (var field in enabledFields)
+                {
+                    InitSimConnectField(field);
+                }
             }
             catch (COMException ex)
             {
@@ -85,54 +97,73 @@ namespace FSKontrol.WPF
             }
         }
 
-        public SimControlAdaptor CreateAdaptor(Field definition)
+        private void EnsureFieldIsEnabled(Field field)
         {
-            FieldInfo fieldInfo = typeof(Field).GetField(definition.ToString());
+            if (enabledFields.Contains(field)) return;
+            enabledFields.Add(field);
+            CreateAdaptor(field);
+        }
+
+        public DataDefinition FieldDefinition(Field field)
+        {
+            FieldInfo fieldInfo = typeof(Field).GetField(field.ToString());
             DataDefinition[] attribs = fieldInfo.GetCustomAttributes(typeof(DataDefinition), false) as DataDefinition[];
             if (attribs.Length == 0) return null;
-            var attrib = attribs[0];
+            return attribs[0];
+        }
+
+        public SimControlAdaptor CreateAdaptor(Field field)
+        {
+
+            var attrib = FieldDefinition(field);
+            if (attrib is null) return null;
+            var unitConfig = UnitTypeConfig.GetConfig(attrib.UnitType);
+            var controlAdaptor = new SimControlAdaptor(field, attrib.UnitType, unitConfig.MinValue, unitConfig.MaxValue);
+            controlAdaptors.Add(field, controlAdaptor);
+            InitSimConnectField(field);
+            return controlAdaptor;
+        }
+
+        private void InitSimConnectField(Field field)
+        {
+            if (!isConnected) return;
+            var attrib = FieldDefinition(field);
+            if (attrib is null) return;
+
+            var unitConfig = UnitTypeConfig.GetConfig(attrib.UnitType);
+
             // Set up data definition
             Console.WriteLine($"Def {attrib.DatumName}, {attrib.UnitType}");
-            var unitConfig = UnitTypeConfig.GetConfig(attrib.UnitType);
-            simconnect.AddToDataDefinition(definition, attrib.DatumName, unitConfig.Units, 
+            simconnect.AddToDataDefinition(field, attrib.DatumName, unitConfig.Units, 
                 unitConfig.DataType, 0.0f, SimConnect.SIMCONNECT_UNUSED);
             var method = typeof(SimConnect).GetMethod("RegisterDataDefineStruct");
             var methodRef = method.MakeGenericMethod(unitConfig.Struct);
-            methodRef.Invoke(simconnect, new object[] { definition });
+            methodRef.Invoke(simconnect, new object[] { field });
 
             // Get initial value
-            simconnect.RequestDataOnSimObjectType(definition, definition, 0, SIMCONNECT_SIMOBJECT_TYPE.USER);
+            simconnect.RequestDataOnSimObjectType(field, field, 0, SIMCONNECT_SIMOBJECT_TYPE.USER);
 
             // Create event mapping
-            simconnect.MapClientEventToSimEvent(definition, attrib.EventId);
-            simconnect.AddClientEventToNotificationGroup(GROUPS.GroupA, definition, false);
-
-            var controlAdaptor = new SimControlAdaptor(definition, attrib.UnitType, unitConfig.MinValue, unitConfig.MaxValue, 
-                simconnect);
-            controlAdaptors.Add(controlAdaptor);
-            return controlAdaptor;
+            simconnect.MapClientEventToSimEvent(field, attrib.EventId);
+            simconnect.AddClientEventToNotificationGroup(GROUPS.GroupA, field, false);
         }
 
         void simconnect_OnRecvSimobjectDataBytype(SimConnect sender, SIMCONNECT_RECV_SIMOBJECT_DATA_BYTYPE data)
         {
-            Field definition = (Field)data.dwRequestID;
-            foreach (var controlAdaptor in controlAdaptors)
-            {
-                if (definition != controlAdaptor.Definition) continue;
-                DoubleStruct s2 = (DoubleStruct)data.dwData[0];
-                controlAdaptor.ReceiveObjectData(s2.value);
-            }
+            Field field = (Field)data.dwRequestID;
+            if (!controlAdaptors.ContainsKey(field)) return;
+            var controlAdaptor = controlAdaptors[field];
+            DoubleStruct s2 = (DoubleStruct)data.dwData[0];
+            controlAdaptor.ReceiveObjectData(s2.value);
         }
 
         void simconnect_OnRecvEvent(SimConnect sender, SIMCONNECT_RECV_EVENT recEvent)
         {
-            Field definition = (Field)recEvent.uEventID;
-            Console.WriteLine($"Received event: {definition}");
-            foreach (var controlAdaptor in controlAdaptors)
-            {
-                if (definition != controlAdaptor.Definition) continue;
-                controlAdaptor.ReceiveEvent(recEvent.dwData);
-            }
+            Field field = (Field)recEvent.uEventID;
+            Console.WriteLine($"Received event: {field}");
+            if (!controlAdaptors.ContainsKey(field)) return;
+            var controlAdaptor = controlAdaptors[field];
+            controlAdaptor.ReceiveEvent(recEvent.dwData);
         }
     }
 
@@ -247,13 +278,12 @@ namespace FSKontrol.WPF
 
     class SimControlAdaptor
     {
-        public SimControlAdaptor(Field definition, UnitType unitType, double minValue, double maxValue, SimConnect simConnect)
+        public SimControlAdaptor(Field definition, UnitType unitType, double minValue, double maxValue)
         {
             Definition = definition;
             UnitType = unitType;
             MinValue = minValue;
             MaxValue = maxValue;
-            SimConnect = simConnect;
         }
 
         public double Value {
@@ -268,21 +298,15 @@ namespace FSKontrol.WPF
         public UnitType UnitType { get; }
         public double MinValue { get; }
         public double MaxValue { get; }
-        public SimConnect SimConnect { get; }
         public IObservable<double> ValueChanges { get { return valueChanges; } }
 
         private Subject<double> valueChanges = new Subject<double>();
         private double val;
 
-        public void TransmitValue(double newValue)
+        public uint PrepareTransmitValue(double newValue)
         {
             newValue = ClipValue(newValue);
-            var transmitVal = UnitConverter.ConvertToEvent(UnitType, newValue);
-            SimConnect.TransmitClientEvent(SimConnect.SIMCONNECT_OBJECT_ID_USER, 
-                Definition,
-                transmitVal,
-                GROUPS.GroupA,
-                SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
+            return UnitConverter.ConvertToEvent(UnitType, newValue);
         }
 
         public void ReceiveEvent(uint data)

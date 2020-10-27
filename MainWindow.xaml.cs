@@ -81,10 +81,7 @@ namespace FSKontrol.WPF
         {
             foreach (var control in controls)
             {
-                var simAdaptor = fsConnection.CreateAdaptor(control.Definition);
-                if (simAdaptor is null) continue;
-                var midiAdaptor = midiConnection.CreateAdaptor(control.ControlType, control.ControlId, simAdaptor);
-
+                var midiAdaptor = midiConnection.CreateAdaptor(control.ControlType, control.ControlId, control.Field, fsConnection);
             }
         }
     }

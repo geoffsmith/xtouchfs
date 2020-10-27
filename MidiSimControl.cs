@@ -2,11 +2,11 @@
 {
     class MidiSimControl
     {
-        public MidiSimControl(MidiControlType controlType, int controlId, Field definition)
+        public MidiSimControl(MidiControlType controlType, int controlId, Field field)
         {
             ControlType = controlType;
             ControlId = controlId;
-            Definition = definition;
+            Field = field;
             // Set up a SimControlAdaptor
             // Get the initial value
             // Set up the lighting
@@ -16,12 +16,7 @@
 
         public MidiControlType ControlType { get; }
         public int ControlId { get; }
-        public Field Definition { get; }
-
-        public void Initialise(SimControlAdaptor simAdaptor)
-        {
-
-        }
+        public Field Field { get; }
     }
 
     enum MidiControlType

@@ -39,9 +39,9 @@ namespace FSKontrol.WPF
             }
         }
 
-        public MidiControlAdaptor CreateAdaptor(MidiControlType controlType, int controlId, SimControlAdaptor simAdaptor)
+        public MidiControlAdaptor CreateAdaptor(MidiControlType controlType, int controlId, Field field, FsConnection fsConnection)
         {
-            var adaptor = new MidiControlAdaptor(controlType, controlId, simAdaptor.UnitType, simAdaptor);
+            var adaptor = new MidiControlAdaptor(controlType, controlId, field, fsConnection);
             controlAdaptors.Add(adaptor);
             adaptor.LightControl.Subscribe(HandleLightControl);
             return adaptor;
@@ -103,13 +103,14 @@ namespace FSKontrol.WPF
 
     class MidiControlAdaptor
     {
-        public MidiControlAdaptor(MidiControlType controlType, int controlId, UnitType unitType, SimControlAdaptor simAdaptor)
+        public MidiControlAdaptor(MidiControlType controlType, int controlId, Field field, FsConnection fsConnection)
         {
             ControlType = controlType;
             ControlId = controlId;
-            UnitType = unitType;
-            SimAdaptor = simAdaptor;
-            SimAdaptor.ValueChanges.Subscribe(p => HandleValueChange(p));
+            Field = field;
+            FsConnection = fsConnection;
+            UnitType = FsConnection.FieldDefinition(field).UnitType;
+            FsConnection.Subscribe(field).Subscribe(p => HandleValueChange(p));
             // TODO: Make sure the lights are initialised
         }
 
@@ -122,15 +123,15 @@ namespace FSKontrol.WPF
                     var pitchBend = (PitchBendEvent)evt;
                     var value = MidiUnitConverter.ConvertFromPitch(UnitType, pitchBend.PitchValue);
                     Console.WriteLine($"Pitch bend value: {pitchBend.PitchValue} -> {value}");
-                    SimAdaptor.TransmitValue(value);
+                    FsConnection.SetValue(Field, value);
                     break;
                 case MidiEventType.ControlChange:
                     // TODO: How to control the sensitivity?
                     var cc = (ControlChangeEvent)evt;
                     var sensitivity = encoderSensitivity[UnitType];
-                    var ccValue = SimAdaptor.Value + MidiUnitConverter.ConvertFromControlChange(UnitType, cc.ControlValue) * sensitivity;
+                    var ccValue = FsConnection.GetValue(Field) + MidiUnitConverter.ConvertFromControlChange(UnitType, cc.ControlValue) * sensitivity;
                     Console.WriteLine($"ccValue: {ccValue}");
-                    SimAdaptor.TransmitValue(ccValue);
+                    FsConnection.SetValue(Field, ccValue);
                     break;
             }
 
@@ -138,7 +139,9 @@ namespace FSKontrol.WPF
 
         public MidiControlType ControlType { get; }
         public int ControlId { get; }
+        public Field Field { get; }
         public UnitType UnitType { get; }
+        public FsConnection FsConnection { get; }
         public SimControlAdaptor SimAdaptor { get; }
         private Subject<LightControlMessage> lightControl = new Subject<LightControlMessage>();
         public IObservable<LightControlMessage> LightControl { get { return lightControl; } }
