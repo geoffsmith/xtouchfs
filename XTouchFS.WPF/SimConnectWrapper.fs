@@ -36,6 +36,15 @@ type DoubleStruct =
     struct
         val value : double
     end
+    
+    
+// TODO: Would it help to wrap the values in their type?
+let eventValue (v : double) = function
+    | Percent -> Convert.ToUInt32(v * 16384.0)
+    | Radians -> uint32 (v * 16384.0)
+    | Degrees -> Convert.ToUInt32(v)
+    | Feet -> Convert.ToUInt32(v)
+    | _ -> 0u
         
 
 type SimConnectWrapper (windowHandle : nativeint) as x =
@@ -59,7 +68,6 @@ type SimConnectWrapper (windowHandle : nativeint) as x =
         ()
         
     let onSimObjectDataHandler (sender : SimConnect) (data : SIMCONNECT_RECV) =
-        dprintfn "Received sim object data: %A" data
         let evt = data :?> SIMCONNECT_RECV_SIMOBJECT_DATA
         maybe {
             let! field = reverseFieldIndices.TryFind (int evt.dwRequestID)
@@ -74,26 +82,25 @@ type SimConnectWrapper (windowHandle : nativeint) as x =
         } |> ignore
         ()
         
-    let onEventHandler (sender : SimConnect) (data : SIMCONNECT_RECV) =
-        dprintfn "Receive event"
-        ()
-        
-    let events = Event<FieldChange>()
+//    let onEventHandler (sender : SimConnect) (data : SIMCONNECT_RECV) =
+//        //dprintfn "Receive event"
+//        ()
 
     do
+        // TODO: Handle disconnection and re-connection
         simConnect <- Some <| new SimConnect("Managed Data Request", windowHandle, WM_USER_SIMCONNECT, null, 0u)
         match simConnect with
         | Some c ->
             c.add_OnRecvOpen(SimConnect.RecvOpenEventHandler x.onOpenHandler)
             c.add_OnRecvQuit(SimConnect.RecvQuitEventHandler onQuitHandler)
             c.add_OnRecvException(SimConnect.RecvExceptionEventHandler onExceptionHandler)
-            c.add_OnRecvEvent(SimConnect.RecvEventEventHandler onEventHandler)
+            //c.add_OnRecvEvent(SimConnect.RecvEventEventHandler onEventHandler)
             c.add_OnRecvSimobjectData(SimConnect.RecvSimobjectDataEventHandler onSimObjectDataHandler)
             ()
         | None -> ()
         
     member x.onOpenHandler (sender : SimConnect) (data : SIMCONNECT_RECV_OPEN) =
-        printfn "Simconnect connected (print)"
+        printfn "Simconnect connected"
         requestedFields |> Set.map (fun f -> x.SetupField(f)) |> ignore
         ()
         
@@ -104,28 +111,23 @@ type SimConnectWrapper (windowHandle : nativeint) as x =
     
     member x.SetupField (field : FsField) =
         maybe {
-            dprintfn "Setting up field"
+            dprintfn "Setting up field %A" field
             requestedFields <- Set.add field requestedFields
             let! c = simConnect
             let! fieldIndex = fieldIndices.TryFind field
             let! config = fieldMap.TryFind field
-            dprintfn "Setting up event"
             let fieldEnum = enum<Groups>(fieldIndex)
-            let event = config.Event
-            dprintfn "Field enum %A, event : %A, variable: %A" fieldEnum event config.Variable
             c.MapClientEventToSimEvent(enum<Groups>(fieldIndex), config.Event)
             c.AddClientEventToNotificationGroup(Groups.GroupA, enum<Groups>(fieldIndex), false)
-            dprintfn "Done setting up event"
             let units = fieldTypeToUnit config.Type
             let dataType = fieldTypeToDataType config.Type
-            dprintfn "Setting up data definition %A %A" units dataType
             c.AddToDataDefinition(fieldEnum, config.Variable, units, dataType, 0.0f, SimConnect.SIMCONNECT_UNUSED)
             c.RegisterDataDefineStruct<DoubleStruct>(fieldEnum)
             c.RequestDataOnSimObject(fieldEnum, fieldEnum, SimConnect.SIMCONNECT_OBJECT_ID_USER,
                                      SIMCONNECT_PERIOD.VISUAL_FRAME,
                                      SIMCONNECT_DATA_REQUEST_FLAG.CHANGED, 0u, 0u, 0u)
-            return None
-        }
+            return ()
+        } |> ignore
         
     
     interface FsConnection with
@@ -140,17 +142,23 @@ type SimConnectWrapper (windowHandle : nativeint) as x =
             | None -> 0.0
             
         member x.SetValue(field : FsField, value : double) =
+            dprintfn "Setting value %A: %A" field value
             maybe {
                 let! c = simConnect
+                let! config = fieldMap.TryFind field
                 let! transmitValue = prepareValueTransmit field value
+                let eValue = eventValue transmitValue config.Type
                 let! fieldIndex = fieldIndices.TryFind field
                 c.TransmitClientEvent(SimConnect.SIMCONNECT_OBJECT_ID_USER, 
                     enum<Groups>(fieldIndex),
-                    // TODO: Need to convert this properly
-                    (Convert.ToUInt32(transmitValue * 16384.0)),
+                    eValue,
                     Groups.GroupA,
                     SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY)
                 return ()
             } |> ignore
             
         member x.FieldChanges = events.Publish
+        
+        member x.ActivateField(field : FsField) =
+            if not (requestedFields.Contains field) then
+                x.SetupField field

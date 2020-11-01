@@ -7,9 +7,9 @@ open MidiTesting.FsInterface
 
 
 // TODO: Constrain values on lights
+// TODO: Lights for trim could show a more narrow range
 // TODO: Initialise values?
 // TODO: Add modes
-// TODO: Lights for trim could show a more narrow range
 // TODO: What about buttons that don't toggle?
 // TODO: Go through all the other commands and see what might break this
 
@@ -81,17 +81,27 @@ let lightButtonHandler (id : int, value : double) =
     Some <| ButtonLight(id, state)
     
     
-let lightsHandler (midi : MidiInterface) (fs : FsConnection) (evt : FieldChange) =
+let updateLights (midi : MidiInterface) (field : FsField) (value : double) =
     maybe {
-        let! config = controlConfig |> Seq.tryFind (fun c -> c.Field = evt.Field)
-        let! fieldConfig = fieldMap.TryFind config.Field
+        let! config = controlConfig |> Seq.tryFind (fun c -> c.Field = field)
+        let! fieldConfig = fieldMap.TryFind field
         let! msg = match config.Control with
             | Fader -> None
-            | Encoder i -> lightEncoderHandler(i, evt.Value, fieldConfig.Type)
-            | Button i -> lightButtonHandler(i, evt.Value)
+            | Encoder i -> lightEncoderHandler(i, value, fieldConfig.Type)
+            | Button i -> lightButtonHandler(i, value)
         midi.UpdateLight msg
         return ()
     } |> ignore
+    
+    
+let lightsHandler (midi : MidiInterface) (evt : FieldChange) =
+    dprintfn "Got light event: %A" evt
+    updateLights midi evt.Field evt.Value
+    
+    
+let initialiseFields (midi : MidiInterface) (fs : FsConnection) =
+    controlConfig |> Seq.iter (fun c -> fs.ActivateField c.Field)
+    controlConfig |> Seq.iter (fun c -> fs.GetValue(c.Field) |> updateLights midi c.Field)
 
 
 let run (fs : FsConnection) = 
@@ -99,14 +109,15 @@ let run (fs : FsConnection) =
     let midi = MidiInterface()
 //    let fs = FsInterface()
     let callback = handler fs
-    let lightsCallback = lightsHandler midi fs
+    let lightsCallback = lightsHandler midi
     midi.Events
         |> Observable.subscribe callback
         |> ignore
     fs.FieldChanges
         |> Observable.subscribe lightsCallback
         |> ignore
-    {| Midi = midi; Fs = fs |}
+    initialiseFields midi fs
+    {| Midi = midi; Fs = fs; LightsCallback = lightsCallback; Callback = callback |}
     
     
 //[<EntryPoint>]

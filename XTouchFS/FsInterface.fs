@@ -49,6 +49,7 @@ type FieldConfig =
     
 type FieldChange = { Field : FsField; Value : double }
 
+// TODO: This should be move to the wrapper and made available through the interface
 let fields = [
     FieldConfig.Define(Throttle, "GENERAL ENG THROTTLE LEVER POSITION:1", "THROTTLE_SET", Percent)
     FieldConfig.Define(ElevatorTrim, "ELEVATOR TRIM PCT", "ELEVATOR_TRIM_SET", Radians)
@@ -62,6 +63,7 @@ let fields = [
 let fieldMap = fields |> Seq.map (fun f -> f.Field, f) |> Map.ofSeq
 
 type FsConnection =
+    abstract member ActivateField : FsField -> unit
     abstract member GetValue : FsField -> double
     abstract member SetValue : FsField * double -> unit
     abstract member FieldChanges : IEvent<FieldChange>
