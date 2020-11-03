@@ -20,10 +20,19 @@ let controlConfig = [
     { Control = Fader; Field = FsField.Throttle }
     { Control = Encoder 0; Field = FsField.HeadingBug }
     { Control = Encoder 1; Field = FsField.AltitudeBug }
+    { Control = Encoder 2; Field = FsField.AutopilotVerticalSpeed }
     { Control = Encoder 7; Field = FsField.ElevatorTrim }
     { Control = Encoder 6; Field = FsField.Mixture }
     { Control = Encoder 5; Field = FsField.PropPitch }
     { Control = Button 8; Field = FsField.AutopilotEnabled }
+    { Control = Button 9; Field = FsField.AutopilotAprEnabled }
+    { Control = Button 10; Field = FsField.AutopilotNavEnabled }
+    { Control = Button 11; Field = FsField.AutopilotFlightDirectorEnabled }
+    { Control = Button 16; Field = FsField.AutopilotHdgEnabled }
+    { Control = Button 17; Field = FsField.AutopilotAltEnabled }
+    { Control = Button 18; Field = FsField.AutopilotVsEnabled }
+//    | AutopilotIasEnabled
+//    | AutopilotVnvEnabled
 ]
 
 let fieldTypeSensitivity = Map [
@@ -31,6 +40,7 @@ let fieldTypeSensitivity = Map [
     Radians, 0.005
     Degrees, 1.0
     Feet, 100.0
+    FeetPerMinute, 100.0
     Boolean, 1.0
 ]
 
@@ -65,6 +75,7 @@ let lightEncoderHandler (id : int, value : double, fieldType : FieldType) =
             | Radians -> Some <| (Pan, value)
             | Percent -> Some <| (Fan, value * 11.0)
             | Feet -> Some <| (Fan, value * 11.0 / 45000.0)
+            | FeetPerMinute -> Some <| (Pan, value / 400.0)
             | Degrees ->
                 let v =
                     if value >= 0.0 && value < 135.0 - 22.5 / 2.0 || value >= 360.0 - 22.5 / 2.0 then 5.0 + value / 22.5

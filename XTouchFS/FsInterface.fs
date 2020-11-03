@@ -11,6 +11,15 @@ type FsField =
     | HeadingBug
     | AltitudeBug
     | AutopilotEnabled
+    | AutopilotVerticalSpeed
+    | AutopilotHdgEnabled
+    | AutopilotAltEnabled
+    | AutopilotVsEnabled
+    | AutopilotIasEnabled
+    | AutopilotAprEnabled
+    | AutopilotNavEnabled
+    | AutopilotFlightDirectorEnabled
+    | AutopilotVnvEnabled
     
     
 type FieldType =
@@ -18,6 +27,7 @@ type FieldType =
     | Percent
     | Degrees
     | Feet
+    | FeetPerMinute
     | Boolean
     | Other
     
@@ -30,6 +40,7 @@ let defaultRanges = Map [
     Degrees, {Min = Some 0.0; Max = Some 360.0; Wraps = true}
     Boolean, {Min = Some 0.0; Max = Some 1.0; Wraps = true}
     Feet, {Min = Some 0.0; Max = None; Wraps = false}
+    FeetPerMinute, {Min = None; Max = None; Wraps = false }
 ]
 
 type FieldConfig =
@@ -58,6 +69,15 @@ let fields = [
     FieldConfig.Define(HeadingBug, "AUTOPILOT HEADING LOCK DIR", "HEADING_BUG_SET", Degrees)
     FieldConfig.Define(AltitudeBug, "AUTOPILOT ALTITUDE LOCK VAR", "AP_ALT_VAR_SET_ENGLISH", Feet)
     FieldConfig.Define(AutopilotEnabled, "AUTOPILOT MASTER", "AP_MASTER", Boolean)
+    FieldConfig.Define(AutopilotVerticalSpeed, "AUTOPILOT VERTICAL HOLD VAR", "AP_VS_VAR_SET_ENGLISH", FeetPerMinute)
+    FieldConfig.Define(AutopilotHdgEnabled, "AUTOPILOT HEADING LOCK", "AP_HDG_HOLD", Boolean)
+    FieldConfig.Define(AutopilotAltEnabled, "AUTOPILOT ALTITUDE LOCK", "AP_ALT_HOLD", Boolean)
+    // ????
+    FieldConfig.Define(AutopilotVsEnabled, "AUTOPILOT VERTICAL HOLD", "AP_VS_HOLD", Boolean)
+    FieldConfig.Define(AutopilotIasEnabled, "AUTOPILOT AIRSPEED HOLD", "AP_PANEL_SPEED_HOLD", Boolean)
+    FieldConfig.Define(AutopilotAprEnabled, "AUTOPILOT APPROACH HOLD", "AP_APR_HOLD", Boolean)
+    FieldConfig.Define(AutopilotNavEnabled, "AUTOPILOT NAV1 LOCK", "AP_NAV1_HOLD", Boolean)
+    FieldConfig.Define(AutopilotFlightDirectorEnabled, "AUTOPILOT FLIGHT DIRECTOR ACTIVE", "TOGGLE_FLIGHT_DIRECTOR", Boolean)
 ]
 
 let fieldMap = fields |> Seq.map (fun f -> f.Field, f) |> Map.ofSeq

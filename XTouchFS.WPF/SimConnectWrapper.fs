@@ -22,6 +22,7 @@ let fieldTypeToUnit = function
     | Percent -> "Percent over 100"
     | Degrees -> "Degrees"
     | Feet -> "Feet"
+    | FeetPerMinute -> "Feet/minute"
     | Boolean -> "Bool"
     | Other -> ""
     
@@ -44,6 +45,7 @@ let eventValue (v : double) = function
     | Radians -> uint32 (v * 16384.0)
     | Degrees -> Convert.ToUInt32(v)
     | Feet -> Convert.ToUInt32(v)
+    | FeetPerMinute -> uint32 (v)
     | _ -> 0u
         
 
