@@ -21,9 +21,12 @@ let controlConfig = [
     { Control = Encoder 0; Field = FsField.HeadingBug }
     { Control = Encoder 1; Field = FsField.AltitudeBug }
     { Control = Encoder 2; Field = FsField.AutopilotVerticalSpeed }
-    { Control = Encoder 7; Field = FsField.ElevatorTrim }
-    { Control = Encoder 6; Field = FsField.Mixture }
+    
+    { Control = Encoder 4; Field = FsField.Com1Frequency }
     { Control = Encoder 5; Field = FsField.PropPitch }
+    { Control = Encoder 6; Field = FsField.Mixture }
+    { Control = Encoder 7; Field = FsField.ElevatorTrim }
+    
     { Control = Button 8; Field = FsField.AutopilotEnabled }
     { Control = Button 9; Field = FsField.AutopilotAprEnabled }
     { Control = Button 10; Field = FsField.AutopilotNavEnabled }
@@ -42,6 +45,8 @@ let fieldTypeSensitivity = Map [
     Feet, 100.0
     FeetPerMinute, 100.0
     Boolean, 1.0
+    FrequencyBcd16, 0.005
+    Mhz, 0.005
 ]
 
 let calculateNewState (evt : XTouchEvent) (currentValue : double) (fieldType : FieldType)=

@@ -24,6 +24,8 @@ let fieldTypeToUnit = function
     | Feet -> "Feet"
     | FeetPerMinute -> "Feet/minute"
     | Boolean -> "Bool"
+    | Mhz -> "MHz"
+    | FrequencyBcd16 -> "Frequency BCD16"
     | Other -> ""
     
 let fieldTypeToDataType = function
@@ -39,6 +41,30 @@ type DoubleStruct =
     end
     
     
+let toBcd16 (value: double) =
+    let valueStr = sprintf "%07.3f" value
+    let a = valueStr.Chars 1 |> string |> int
+    let b = valueStr.Chars 2 |> string |> int
+    let c = valueStr.Chars 4 |> string |> int
+    let d = valueStr.Chars 5 |> string |> int
+    dprintfn "toBcd16 -> a: %d, b: %d, c: %d, d: %d" a b c d
+    let r = (a <<< 12) ||| (b <<< 8) ||| (c <<< 4) ||| d
+    (uint32) r
+    
+    
+let fromBcd16 (value: uint32) =
+    dprintfn "Converting from BCD %A %A %A" value (byte value) (double value)
+    let mask = uint32 0xf
+    let d = value &&& mask
+    let c = (value >>> 4) &&& mask
+    let b = (value >>> 8) &&& mask
+    let a = (value >>> 12) &&& mask
+    let r = sprintf "1%d%d.%d%d0" a b c d |> double
+    dprintfn "a: %d, b: %d, c: %d, d: %d -> %f" a b c d r
+    r
+    
+    
+    
 // TODO: Would it help to wrap the values in their type?
 let eventValue (v : double) = function
     | Percent -> Convert.ToUInt32(v * 16384.0)
@@ -46,6 +72,7 @@ let eventValue (v : double) = function
     | Degrees -> Convert.ToUInt32(v)
     | Feet -> Convert.ToUInt32(v)
     | FeetPerMinute -> uint32 (v)
+    | Mhz -> uint32 (v * 1000000.0)
     | _ -> 0u
         
 
@@ -77,9 +104,10 @@ type SimConnectWrapper (windowHandle : nativeint) as x =
             let! result = match s with
                           | :? DoubleStruct as r -> Some r
                           | _ -> None
-            dprintfn "Got sim object value: %A" result.value
-            fieldValues <- Map.add field result.value fieldValues
-            events.Trigger({Field = field; Value = result.value})
+            let value = result.value
+            dprintfn "Got sim object value: %A" value
+            fieldValues <- Map.add field value fieldValues
+            events.Trigger({Field = field; Value = value})
             return ()
         } |> ignore
         ()
@@ -151,6 +179,7 @@ type SimConnectWrapper (windowHandle : nativeint) as x =
                 let! transmitValue = prepareValueTransmit field value
                 let eValue = eventValue transmitValue config.Type
                 let! fieldIndex = fieldIndices.TryFind field
+                dprintfn "Transmit value: %f, Evalue: %A fieldIndex: %A" transmitValue eValue fieldIndex
                 c.TransmitClientEvent(SimConnect.SIMCONNECT_OBJECT_ID_USER, 
                     enum<Groups>(fieldIndex),
                     eValue,
