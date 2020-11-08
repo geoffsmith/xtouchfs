@@ -10,17 +10,24 @@ type FsField =
     | PropPitch
     | HeadingBug
     | AltitudeBug
+    // TODO: Speed bug
     | AutopilotEnabled
     | AutopilotVerticalSpeed
     | AutopilotHdgEnabled
     | AutopilotAltEnabled
     | AutopilotVsEnabled
-    | AutopilotIasEnabled
+    | AutopilotIasEnabled // Is this FLC?
     | AutopilotAprEnabled
     | AutopilotNavEnabled
     | AutopilotFlightDirectorEnabled
     | AutopilotVnvEnabled
+    // TODO: Autopilot FLC + speed bug
     | Com1Frequency
+    // TODO: Switch com / stdby
+    // TODO: Switch com1 / com2
+    // TODO: Turn com1 / com2 on and off
+    // TODO: Nav freqencies
+    // TODO: Garmin control
     
     
 type FieldType =

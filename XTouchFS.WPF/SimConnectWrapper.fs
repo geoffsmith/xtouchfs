@@ -34,7 +34,6 @@ let fieldTypeToDataType = function
     | Degrees -> SIMCONNECT_DATATYPE.FLOAT64
     | _ -> SIMCONNECT_DATATYPE.FLOAT64
     
-//[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
 type DoubleStruct =
     struct
         val value : double
@@ -47,21 +46,17 @@ let toBcd16 (value: double) =
     let b = valueStr.Chars 2 |> string |> int
     let c = valueStr.Chars 4 |> string |> int
     let d = valueStr.Chars 5 |> string |> int
-    dprintfn "toBcd16 -> a: %d, b: %d, c: %d, d: %d" a b c d
     let r = (a <<< 12) ||| (b <<< 8) ||| (c <<< 4) ||| d
     (uint32) r
     
     
 let fromBcd16 (value: uint32) =
-    dprintfn "Converting from BCD %A %A %A" value (byte value) (double value)
     let mask = uint32 0xf
     let d = value &&& mask
     let c = (value >>> 4) &&& mask
     let b = (value >>> 8) &&& mask
     let a = (value >>> 12) &&& mask
-    let r = sprintf "1%d%d.%d%d0" a b c d |> double
-    dprintfn "a: %d, b: %d, c: %d, d: %d -> %f" a b c d r
-    r
+    sprintf "1%d%d.%d%d0" a b c d |> double
     
     
     
@@ -77,15 +72,12 @@ let eventValue (v : double) = function
         
 
 type SimConnectWrapper (windowHandle : nativeint) as x =
-    let mutable simConnect = None
+    let mutable simConnect : SimConnect option = None
     let mutable requestedFields : Set<FsField> = Set.empty
     let mutable fieldValues : Map<FsField, double> = Map.empty
     let events = Event<FieldChange>()
 
 
-    let onQuitHandler (sender : SimConnect) (data : SIMCONNECT_RECV) =
-        dprintfn "SimConnect quit"
-        ()
         
     let onExceptionHandler (sender : SimConnect) (data : SIMCONNECT_RECV) =
         dprintfn "SimConnect exception: %A" data
@@ -116,29 +108,50 @@ type SimConnectWrapper (windowHandle : nativeint) as x =
 //        //dprintfn "Receive event"
 //        ()
 
+
     do
-        // TODO: Handle disconnection and re-connection
-        simConnect <- Some <| new SimConnect("Managed Data Request", windowHandle, WM_USER_SIMCONNECT, null, 0u)
-        match simConnect with
-        | Some c ->
-            c.add_OnRecvOpen(SimConnect.RecvOpenEventHandler x.onOpenHandler)
-            c.add_OnRecvQuit(SimConnect.RecvQuitEventHandler onQuitHandler)
-            c.add_OnRecvException(SimConnect.RecvExceptionEventHandler onExceptionHandler)
-            //c.add_OnRecvEvent(SimConnect.RecvEventEventHandler onEventHandler)
-            c.add_OnRecvSimobjectData(SimConnect.RecvSimobjectDataEventHandler onSimObjectDataHandler)
-            ()
-        | None -> ()
+        async {
+            while true do
+                if simConnect = None then
+                    dprintfn "Attempting to reconnect to flight sim"
+                    x.TryConnect()
+            do! Async.Sleep(1000)
+        } |> Async.Start
+        
+    member x.TryConnect () =
+        try
+            maybe {
+                let c = new SimConnect("Managed Data Request", windowHandle, WM_USER_SIMCONNECT, null, 0u)
+                simConnect <- Some c
+                c.add_OnRecvOpen(SimConnect.RecvOpenEventHandler x.onOpenHandler)
+                c.add_OnRecvQuit(SimConnect.RecvQuitEventHandler x.onQuitHandler)
+                c.add_OnRecvException(SimConnect.RecvExceptionEventHandler onExceptionHandler)
+                c.add_OnRecvSimobjectData(SimConnect.RecvSimobjectDataEventHandler onSimObjectDataHandler)
+            } |> ignore
+        with
+            | _ as e ->
+                dprintfn "Failed to connect: %A" e
         
     member x.onOpenHandler (sender : SimConnect) (data : SIMCONNECT_RECV_OPEN) =
         printfn "Simconnect connected"
         requestedFields |> Set.map (fun f -> x.SetupField(f)) |> ignore
         ()
         
+    member x.onQuitHandler (sender : SimConnect) (data : SIMCONNECT_RECV) =
+        dprintfn "SimConnect quit"
+        simConnect <- None
+        ()
 
-    member x.ReceiveMessage() = match simConnect with
-    | Some s -> s.ReceiveMessage()
-    | None -> ()
-    
+    member x.ReceiveMessage() =
+        try
+            maybe {
+                let! s = simConnect
+                s.ReceiveMessage()
+                return ()
+            } |> ignore
+        with
+            | _ as e -> dprintfn "Exception receiving sim connect message %A" e
+            
     member x.SetupField (field : FsField) =
         maybe {
             dprintfn "Setting up field %A" field
